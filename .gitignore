@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Backtest artifacts & tick cache (regenerated from MT5; not source)
+.bar_cache/
+backtest/
+results_*/
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

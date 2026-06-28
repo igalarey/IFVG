@@ -23,7 +23,8 @@ run_live.py            live/paper runner (same rule, real MT5 orders; auto-recon
 run_live.bat           24/7 auto-restart wrapper for the live runner
 app/                   local web dashboard: configure / start / stop / watch the bot(s)
   └── webapp.py        Flask panel; supervises one run_live.py per account (multi-account)
-run_app.bat            launches the dashboard (open http://127.0.0.1:8765)
+run_app.vbs            launches the dashboard hidden (no window); run_app.bat = visible
+run_app.bat            launches the dashboard in a cmd window (open http://127.0.0.1:8765)
 analysis/              research & validation tools (run from the repo root)
   ├── validate_perturbation.py     structural perturbation-survival (overfit test)
   ├── sweep_zone_age.py            zone-freshness cutoff sweep (validates MAX_ZONE_AGE_H)

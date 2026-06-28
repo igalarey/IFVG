@@ -536,10 +536,13 @@ def main():
             r = MANAGER.get(a["id"])
             if r:
                 r.start()
-    try:
-        webbrowser.open(f"http://{HOST}:{PORT}")
-    except Exception:
-        pass
+    # auto-open the panel on launch — skip it for unattended/boot runs by setting
+    # IFVG_NO_BROWSER=1 (so a hidden Task Scheduler start does not pop a browser).
+    if not os.environ.get("IFVG_NO_BROWSER"):
+        try:
+            webbrowser.open(f"http://{HOST}:{PORT}")
+        except Exception:
+            pass
     app.run(host=HOST, port=PORT, threaded=True, debug=False)
 
 

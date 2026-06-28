@@ -42,10 +42,16 @@ python run_live.py --symbol XAUUSD --risk-pct 0.01
 
 ## 2b. Or run it from the web dashboard (configure + watch in the browser)
 
-If you prefer not to touch files or flags, use the local control panel. Double-click
-**`run_app.bat`** (or `python app/webapp.py`); it opens **http://127.0.0.1:8765** in
-the VPS browser. Add one or more **accounts** (left list), set each one's settings on
-the right, **Start / Stop** each independently, and watch its live output.
+If you prefer not to touch files or flags, use the local control panel. Launch it and
+open **http://127.0.0.1:8765** in the VPS browser, then add one or more **accounts**
+(left list), set each one's settings on the right, **Start / Stop** each independently,
+and watch its live output. Two ways to launch:
+
+- **`run_app.vbs`** — runs everything **hidden (no cmd window)**. Recommended.
+- **`run_app.bat`** — same, but in a visible cmd window (keep it open / minimised).
+
+Either way no browser opens by itself; go to the URL above. To **stop** a hidden run,
+end it from Task Scheduler or kill the `python.exe` / `cmd.exe` in Task Manager.
 
 - **Multi-account.** Each account is fully independent — its own symbol, login,
   server, password, MT5 terminal and risk (e.g. one challenge at 1% and one funded
@@ -91,15 +97,16 @@ These are **per account** — every account has its own independent set:
 
 ### Auto-start the dashboard on boot (Task Scheduler)
 
-So the panel (and, with *"Arrancar el bot al abrir la app"* ticked, the bot itself)
-comes back automatically after a VPS reboot:
+So the panel (and, with *"Arrancar al abrir la app"* ticked, the bots themselves)
+comes back automatically after a VPS reboot — **hidden, no window**:
 
 1. Open **Task Scheduler** (`taskschd.msc`) → **Create Task…** (not *Basic*).
 2. **General**: name it `IFVG bot`; select **Run only when user is logged on**
    (the MT5 terminal needs a desktop session); tick **Run with highest privileges**.
 3. **Triggers** → New → *Begin the task:* **At log on**, your user.
-4. **Actions** → New → *Start a program* → **Program/script:** the full path to
-   `run_app.bat`; **Start in:** the repo folder (e.g. `C:\...\mt5`).
+4. **Actions** → New → *Start a program* → **Program/script:** `wscript.exe`;
+   **Add arguments:** the full path to `run_app.vbs` (in quotes); **Start in:** the
+   repo folder (e.g. `C:\...\mt5`). Using the `.vbs` keeps it windowless.
 5. **Conditions**: untick *Start the task only if the computer is on AC power*.
 6. **Settings**: tick *If the task fails, restart every 1 minute*; set
    *If the task is already running: Do not start a new instance* (`run_app.bat`
@@ -107,7 +114,7 @@ comes back automatically after a VPS reboot:
 
 Quick CLI equivalent (run in an elevated PowerShell, fix the path):
 ```
-schtasks /Create /TN "IFVG bot" /TR "C:\...\mt5\run_app.bat" /SC ONLOGON /RL HIGHEST /F
+schtasks /Create /TN "IFVG bot" /TR "wscript.exe \"C:\...\mt5\run_app.vbs\"" /SC ONLOGON /RL HIGHEST /F
 ```
 
 > **Reboot survival needs a logged-on session.** "At log on" only fires when a user

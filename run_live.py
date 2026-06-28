@@ -31,11 +31,11 @@ import time
 
 import MetaTrader5 as mt5
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from ifvg import mt5_feed, entry_logic
 from ifvg.position import (breakeven_stop, risk_lots, RISK_PCT, MAX_LOTS,
-                           TIME_STOP_HOURS, FRIDAY_FLAT_HOUR)
+                           TIME_STOP_HOURS, FRIDAY_FLAT_HOUR, FRIDAY_FLAT_UTC_HOUR)
 
 # recent bars kept per timeframe (cover entry_logic's tail() needs + margin)
 BUFFER_BARS = {"m1": 5, "m5": 90, "h1": 90}
@@ -78,6 +78,32 @@ def current_pending(symbol):
     return None
 
 
+def used_zone_fills(symbol, lookback_h=2.0):
+    """(direction, entry_price) for everything we have already acted on: the open
+    position, the resting limit entry, and entries closed in the last `lookback_h`
+    hours. Feeds entry_logic.seed_mitigated at startup so a restart does not
+    re-enter a zone we already traded (the freshness filter is 1h, so a 2h
+    look-back covers every zone that could still be enterable)."""
+    used = []
+    pos = current_position(symbol)
+    if pos is not None:
+        used.append(("long" if pos.type == mt5.POSITION_TYPE_BUY else "short",
+                     pos.price_open))
+    pend = current_pending(symbol)
+    if pend is not None:
+        used.append(("long" if pend.type == mt5.ORDER_TYPE_BUY_LIMIT else "short",
+                     pend.price_open))
+    tick = mt5.symbol_info_tick(symbol)
+    frm = datetime.fromtimestamp(tick.time - lookback_h * 3600, tz=timezone.utc)
+    to = datetime.fromtimestamp(tick.time + 3600, tz=timezone.utc)
+    for deal in (mt5.history_deals_get(frm, to) or ()):
+        if (deal.magic == MAGIC and deal.symbol == symbol
+                and deal.entry == mt5.DEAL_ENTRY_IN):
+            used.append(("long" if deal.type == mt5.DEAL_TYPE_BUY else "short",
+                         deal.price))
+    return used
+
+
 def position_lots(symbol, sig, risk_pct):
     """Fixed-fractional risk off LIVE equity, snapped to the symbol's volume."""
     info = mt5.symbol_info(symbol)
@@ -94,12 +120,25 @@ def position_lots(symbol, sig, risk_pct):
                      max_lots=min(vmax, MAX_LOTS), lot_step=step)
 
 
-def friday_flat(symbol):
-    """True once past FRIDAY_FLAT_HOUR (server time) on a Friday — no weekend
-    holding. Uses the symbol's last tick time (broker server clock)."""
+def broker_utc_offset(symbol):
+    """Hours the broker's server clock leads true UTC (auto-detected, DST-aware).
+    MT5 reports tick.time as the server WALL-CLOCK encoded as a Unix epoch, so
+    comparing it against real UTC yields the offset. Re-read each call so a DST
+    change is picked up automatically."""
     tick = mt5.symbol_info_tick(symbol)
-    t = datetime.fromtimestamp(tick.time, tz=timezone.utc)   # server epoch
-    return t.weekday() == 4 and t.hour >= FRIDAY_FLAT_HOUR
+    server_wall = datetime.fromtimestamp(tick.time, tz=timezone.utc)
+    return round((server_wall - datetime.now(timezone.utc)).total_seconds() / 3600.0)
+
+
+def friday_flat(symbol):
+    """True once past FRIDAY_FLAT_UTC_HOUR (TRUE UTC) on a Friday — no weekend
+    holding. Converts the broker's server clock to real UTC via the auto-detected
+    offset, so the cutoff lands at the same real-world moment on ANY prop firm
+    with no per-broker editing."""
+    tick = mt5.symbol_info_tick(symbol)
+    server_wall = datetime.fromtimestamp(tick.time, tz=timezone.utc)
+    true_utc = server_wall - timedelta(hours=broker_utc_offset(symbol))
+    return true_utc.weekday() == 4 and true_utc.hour >= FRIDAY_FLAT_UTC_HOUR
 
 
 def _filling_mode(symbol):
@@ -238,8 +277,20 @@ def main():
                          "--allow-real.")
 
     state = entry_logic.new_state()
+    # restart safety: mark zones we already hold / just traded as mitigated so a
+    # restart never re-enters them (broker state survives; in-memory state doesn't)
+    try:
+        seeded = entry_logic.seed_mitigated(state, fetch_buffers(args.symbol),
+                                            used_zone_fills(args.symbol))
+        if seeded:
+            _log(f"restart: marked {seeded} already-traded zone(s) mitigated")
+    except Exception as exc:
+        _log(f"seed_mitigated skipped: {exc!r}")
+    offset = broker_utc_offset(args.symbol)
     _log(f"{args.symbol}  risk={args.risk_pct*100:.2f}%  time-stop={TIME_STOP_HOURS}h"
-         f"  friday-flat={FRIDAY_FLAT_HOUR}h  ({'DEMO' if is_demo else 'REAL'})")
+         f"  friday-flat={FRIDAY_FLAT_UTC_HOUR}h UTC (server UTC{offset:+d} -> "
+         f"{(FRIDAY_FLAT_UTC_HOUR + offset) % 24:02d}h server)"
+         f"  ({'DEMO' if is_demo else 'REAL'})")
 
     last_bar, last_beat = None, 0.0
     try:

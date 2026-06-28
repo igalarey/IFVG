@@ -230,6 +230,16 @@ code + docs get committed.
 - Account currency ≠ quote currency slightly skews realized risk (e.g. EUR account,
   USD prices → real risk ~0.45% not 0.5%).
 - No economic-calendar API in MT5 Python — a news filter needs an external dataset.
+- **Broker server timezone differs per broker** (EET/UTC+2-3 is common, but not
+  universal — and prop firms vary). Only logic anchored to a *real-world* event (a
+  weekend flat, a session filter) is sensitive to it; structural/relative logic (FVGs,
+  swings, a relative time-stop) is immune. For the anchored rules, **don't hardcode a
+  server hour — auto-detect the offset and convert to true UTC** so the bot adapts to
+  any broker with no per-firm editing. `tick.time` (MT5) encodes the server wall-clock
+  as a Unix epoch, so `offset = round((utcfromtimestamp(tick.time) - now_utc)/3600)`;
+  re-read it each loop to track DST. Measure the *backtest data's* own offset once (e.g.
+  from where the Friday close lands vs the known 21:00/22:00 UTC market close) and pin
+  it as a constant so backtest and live agree on the same real-world cutoff.
 
 ---
 
@@ -287,7 +297,13 @@ and per-trade EV (gross → cost → net, in $ and in R).
 - Restart wrapper (`.bat` loop or NSSM service); RDP **disconnect, don't log off.**
 - **Demo-account guard** — refuse to run on a real account without an explicit flag.
 - Restart-safe: read open positions back from the broker by magic number so a restart
-  resumes managing them.
+  resumes managing them. **Server-side SL/TP and a server-side order expiry** mean the
+  broker still protects an open trade and cancels a stale limit while the script is down.
+- **Reseed in-memory rule state from the broker on startup.** Any state the rule keeps in
+  memory but not at the broker (e.g. which setup zones were already consumed) is lost on
+  restart and can cause a *re-entry* of a setup you already traded. On boot, read the open
+  position / resting order / recent fills (by magic) and mark their zones consumed before
+  the first decision. Match broker fills to rule state by price-band + direction.
 - **Two-phase risk** (prop-firm): higher risk for the challenge (reach target faster,
   fee is the only thing at stake), then drop to conservative once the funded account —
   the real asset — is live.

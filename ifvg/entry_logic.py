@@ -166,6 +166,33 @@ def _register_h1_zones(buf, state) -> None:
         })
 
 
+def seed_mitigated(state, buf, used) -> int:
+    """Restart safety: rebuild the zone set from `buf` and mark mitigated every
+    zone we have already acted on, so a restart does not re-enter a zone we still
+    hold or just traded (the in-memory `mitigated` flag is otherwise lost on
+    restart, while the broker-side position/history survives).
+
+    `used` is an iterable of (direction, price) — the open position, the resting
+    limit entry and recent fills, read from the broker by the live runner. A zone
+    matches when the fill price falls within its band (small tolerance) and the
+    direction agrees (bull zone -> long, bear zone -> short). Returns the number
+    of zones marked, for logging.
+    """
+    _register_h1_zones(buf, state)
+    tol = SL_BUFFER * PIP
+    n = 0
+    for z in state["zones"]:
+        if z["mitigated"]:
+            continue
+        zdir = "long" if z["direction"] == "bull" else "short"
+        for d, px in used:
+            if d == zdir and z["bot"] - tol <= px <= z["top"] + tol:
+                z["mitigated"] = True
+                n += 1
+                break
+    return n
+
+
 def _check_zone_entry(now, bar, buf, state) -> "dict | None":
     # has the current 1m bar entered an unmitigated zone?
     for z in state["zones"]:

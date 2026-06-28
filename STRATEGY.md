@@ -268,7 +268,8 @@ them in the source if you ever re-tune.
 | `ZONE_TTL_DAYS` | 7 | entry_logic | forget untouched zones after this |
 | `RISK_PCT` | 0.005 | position | 0.5% of equity risked per trade |
 | `TIME_STOP_HOURS` | 4 | position | force-close a trade after this long (intraday cap) |
-| `FRIDAY_FLAT_HOUR` | 17 | position | flat after this server-hour on Fridays (no weekend hold) |
+| `FRIDAY_FLAT_HOUR` | 17 | position | flat after this hour on Fridays (no weekend hold). In the **backtest data clock**, measured to be **UTC-3 fixed**; backtest reads bar.hour directly. |
+| `FRIDAY_FLAT_UTC_HOUR` | 20 | position | same cutoff in **true UTC** (= 17 + 3). **Live** uses this with the broker's auto-detected server offset, so the flat fires at the same real-world moment on any prop firm — no per-broker editing. |
 | `MAX_LOTS` | 5.0 | position | hard cap on a single position |
 | `SL_BUFFER` | 3.0 pips | position | buffer beyond the swept extreme |
 | `OZ_PER_LOT` | 100 | position | XAUUSD contract size |

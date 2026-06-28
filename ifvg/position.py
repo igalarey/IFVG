@@ -28,10 +28,20 @@ TIME_STOP_HOURS = 4   # force-close a trade after this long: caps the break-even
                       # FVG method). Shorter holds also proved more cost-robust;
                       # 4h chosen as a principled intraday cap on the stable part
                       # of the curve (not the noisy 2-3h max).
-FRIDAY_FLAT_HOUR = 17  # after this hour (broker/server time) on Fridays, close any
-                      # open position and stop opening new ones: FTMO regular
-                      # accounts disallow weekend holding, and it avoids weekend
-                      # gap risk. (17h cuts weekend-held trades 133->6 at ~-4%.)
+FRIDAY_FLAT_HOUR = 17  # after this hour on Fridays, close any open position and
+                      # stop opening new ones: FTMO regular accounts disallow
+                      # weekend holding, and it avoids weekend gap risk.
+                      # (17h cuts weekend-held trades 133->6 at ~-4%.)
+                      # NOTE: this hour is in the BACKTEST DATA's clock, which was
+                      # measured to be UTC-3, fixed (no DST) — confirmed by the
+                      # Friday market close landing exactly on 21:00/22:00 UTC in
+                      # summer/winter. The backtest reads bar.hour directly, so it
+                      # uses this value as-is.
+DATA_UTC_OFFSET = -3   # the backtest data clock's offset from true UTC (measured).
+# The same cutoff expressed in TRUE UTC. Live uses THIS (not FRIDAY_FLAT_HOUR)
+# together with the broker's auto-detected server offset, so the flat fires at the
+# same real-world moment on any prop firm — no per-broker editing. 17h@UTC-3 = 20h UTC.
+FRIDAY_FLAT_UTC_HOUR = FRIDAY_FLAT_HOUR - DATA_UTC_OFFSET   # = 20
 
 # Overnight financing (swap). Gold swaps are a COST on BOTH sides on FTMO, so we
 # model it as a flat charge per lot per night held across the broker's rollover,

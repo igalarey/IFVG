@@ -10,6 +10,11 @@ backtest/
 results_*/
 *.log
 
+# Web dashboard: holds broker credentials in plain text — never commit
+app/config.json
+# per-account live logs written by the dashboard
+logs/
+
 # OS / editor
 .DS_Store
 .vscode/

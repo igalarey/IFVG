@@ -27,6 +27,7 @@ USAGE
     python run_live.py --symbol XAUUSD            # attach to the open terminal
 """
 import argparse
+import os
 import time
 
 import MetaTrader5 as mt5
@@ -263,6 +264,10 @@ def _step(args, state):
 
 def main():
     args = parse_args()
+    # the web app passes the broker password via env (not argv, so it stays out
+    # of the process list); the --password flag still works for manual runs.
+    if not args.password:
+        args.password = os.environ.get("MT5_PASSWORD")
 
     # startup: wait for the terminal (it may not be up yet under a restarter)
     while not (_connected() or _connect(args)):

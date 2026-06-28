@@ -1,0 +1,12 @@
+# IFVG bot dependencies
+#
+# Live / VPS (run_live.py + the web dashboard) needs ONLY these four:
+#MetaTrader5
+pandas
+numpy
+flask
+
+# Backtest & analysis only (NOT needed on the VPS) — uncomment to also run
+# run_backtest.py and the analysis/ tools on a dev machine:
+# backtrader
+# matplotlib

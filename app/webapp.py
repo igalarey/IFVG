@@ -121,9 +121,14 @@ def build_cmd_env(acc):
         cmd += ["--allow-real"]
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
+    env["IFVG_PING_FILE"] = ping_path(acc["id"])     # touch it -> bot replies HEALTH
     if str(acc.get("password", "")).strip():
         env["MT5_PASSWORD"] = str(acc["password"]).strip()
     return cmd, env
+
+
+def ping_path(account_id):
+    return os.path.join(LOG_DIR, f"{account_id}.ping")
 
 
 # ── one supervised bot process (per account) ─────────────────────────────────
@@ -139,7 +144,8 @@ class BotRunner:
         self.lock = threading.Lock()
         self.seq = 0
         self.lines = deque(maxlen=LOG_LINES)
-        self.status = {"equity": None, "position": None, "started_at": None}
+        self.status = {"equity": None, "position": None, "started_at": None,
+                       "health": None, "warning": None}
         self.log_path = os.path.join(LOG_DIR, f"{account_id}.log")
         threading.Thread(target=self._supervise, daemon=True).start()
 
@@ -156,16 +162,28 @@ class BotRunner:
             pass
 
     def _parse_status(self, text):
-        if "equity=" in text:
-            try:
-                self.status["equity"] = text.split("equity=")[1].split()[0]
-            except Exception:
-                pass
-        if "position=" in text:
+        for key in ("eq=", "equity="):               # bot logs eq=, legacy equity=
+            if key in text:
+                try:
+                    self.status["equity"] = text.split(key)[1].split()[0]
+                except Exception:
+                    pass
+                break
+        # position state from the lifecycle events the bot logs
+        if "FILLED:" in text or "resuming open" in text or "heartbeat: in " in text:
+            self.status["position"] = "open"
+        elif "CLOSED:" in text or "heartbeat: flat" in text:
+            self.status["position"] = "flat"
+        elif "position=" in text:                     # legacy heartbeat
             try:
                 self.status["position"] = text.split("position=")[1].split()[0]
             except Exception:
                 pass
+        # health / warnings (HEALTH [tag] ok=True/False | … | WARN: …)
+        if "HEALTH" in text and "ok=" in text:
+            self.status["health"] = text.split("] ", 1)[-1] if "] " in text else text
+            self.status["warning"] = (text.split("WARN:", 1)[1].strip()
+                                      if "ok=False" in text and "WARN:" in text else None)
 
     # --- process lifecycle ---
     def _start(self):
@@ -237,6 +255,7 @@ class BotRunner:
                 "running": running, "desired": self.desired,
                 "pid": self.proc.pid if running else None,
                 "equity": self.status["equity"], "position": self.status["position"],
+                "health": self.status["health"], "warning": self.status["warning"],
                 "lines": new, "last": self.seq,
             }
 
@@ -274,6 +293,7 @@ class Manager:
                 "running": running, "desired": bool(r and r.desired),
                 "equity": r.status["equity"] if r else None,
                 "position": r.status["position"] if r else None,
+                "warning": r.status["warning"] if r else None,
             })
         return out
 
@@ -363,6 +383,21 @@ def stop():
     return jsonify({"ok": bool(r)})
 
 
+@app.route("/ping", methods=["POST"])
+def ping():
+    """Ask the running bot for a fresh HEALTH line (it watches the ping file)."""
+    aid = (request.form.get("id") or request.args.get("id") or "").strip()
+    r = MANAGER.get(aid)
+    running = r and r.proc is not None and r.proc.poll() is None
+    if not running:
+        return jsonify({"ok": False, "msg": "bot not running"})
+    try:
+        open(ping_path(aid), "w").close()        # touch -> bot replies within a poll
+    except Exception as exc:
+        return jsonify({"ok": False, "msg": repr(exc)})
+    return jsonify({"ok": True})
+
+
 @app.route("/status")
 def status():
     return jsonify(MANAGER.summary())
@@ -398,9 +433,12 @@ PAGE = r"""
  button{cursor:pointer;border:0;border-radius:8px;padding:8px 13px;font-weight:600;color:#fff;font-size:13px}
  button:disabled{opacity:.4;cursor:not-allowed}
  .btns{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
- .start{background:var(--ok)} .stop{background:var(--bad)} .save{background:var(--acc)} .del{background:#3a3f4b}
+ .start{background:var(--ok)} .stop{background:var(--bad)} .save{background:var(--acc)} .del{background:#3a3f4b} .ping{background:#0e7490}
  .add{background:var(--acc);width:100%;margin-bottom:10px}
  .warn{color:var(--bad);font-size:12px;margin-top:8px}
+ .hbanner{background:#3a1d22;border:1px solid var(--bad);color:#ffd9d9;padding:8px 11px;border-radius:8px;margin-top:10px;font-size:13px;font-weight:600}
+ .hline{color:var(--mut);font:12px/1.4 Consolas,monospace;margin-top:8px;word-break:break-all}
+ .warnmark{color:var(--bad)}
  .list{overflow:auto;display:flex;flex-direction:column;gap:7px}
  .item{padding:9px 11px;border:1px solid #2b303b;border-radius:9px;cursor:pointer;background:#12151b}
  .item.sel{border-color:var(--acc);background:#161b27}
@@ -430,6 +468,8 @@ PAGE = r"""
       <span id="badge" class="badge">—</span>
       <div class="stat"><span>equity <b id="eq">—</b></span><span>posición <b id="pos">—</b></span><span>pid <b id="pid">—</b></span></div>
     </div>
+    <div id="hwarn" class="hbanner hidden"></div>
+    <div id="health" class="hline"></div>
     <form id="cfg">
      <input type="hidden" name="id" id="fid">
      <div class="row">
@@ -450,6 +490,7 @@ PAGE = r"""
       <button type="button" class="save"  onclick="saveAccount()">Guardar</button>
       <button type="button" class="start" id="bStart" onclick="startBot()">▶ Arrancar</button>
       <button type="button" class="stop"  id="bStop"  onclick="stopBot()">■ Parar</button>
+      <button type="button" class="ping"  id="bPing"  onclick="pingBot()">✦ Ping</button>
       <button type="button" class="del"   onclick="delAccount()">Eliminar</button>
      </div>
     </form>
@@ -472,13 +513,14 @@ function renderList(){
     const d=document.createElement('div'); d.className='item'+(a.id===sel?' sel':'');
     d.onclick=()=>select(a.id);
     d.innerHTML=`<div class="top"><span class="dot ${cls}"></span><span class="nm">${esc(a.name)}</span>
+      ${s.warning?`<span class="warnmark" title="${esc(s.warning)}">⚠</span>`:''}
       <button class="mini ${s.desired?'stop':'start'}" onclick="event.stopPropagation();${s.desired?'stopBot':'startBot'}('${a.id}')">${s.desired?'■':'▶'}</button></div>
       <div class="meta"><span>${esc(a.symbol)}</span><span>${a.risk_pct}%</span><span>${esc(txt)}</span></div>`;
     L.appendChild(d);
   }
 }
 function select(id){
-  sel=id; logLast=0; document.getElementById('log').textContent='';
+  sel=id; logLast=0; document.getElementById('log').textContent=''; updateHealth('',null);
   const a=ACC.find(x=>x.id===id); if(!a)return;
   document.getElementById('detail').classList.remove('hidden');
   document.getElementById('noSel').classList.add('hidden');
@@ -505,6 +547,15 @@ function delAccount(){if(!sel||!confirm('¿Eliminar esta cuenta?'))return;const 
   fetch('/account/delete',{method:'POST',body:fd}).then(()=>{sel=null;loadAccounts();});}
 function startBot(id){const fd=new FormData();fd.append('id',id||sel);fetch('/start',{method:'POST',body:fd});}
 function stopBot(id){const fd=new FormData();fd.append('id',id||sel);fetch('/stop',{method:'POST',body:fd});}
+function pingBot(){if(!sel)return;const fd=new FormData();fd.append('id',sel);
+  fetch('/ping',{method:'POST',body:fd}).then(r=>r.json()).then(j=>{
+    if(!j.ok)updateHealth('ping: '+(j.msg||'no se pudo'), 'No se pudo hacer ping: '+(j.msg||'bot parado'));});}
+function updateHealth(health,warning){
+  document.getElementById('health').textContent=health||'';
+  const hw=document.getElementById('hwarn');
+  if(warning){hw.textContent='⚠ '+warning;hw.classList.remove('hidden');}
+  else{hw.classList.add('hidden');}
+}
 
 function tick(){
   fetch('/status').then(r=>r.json()).then(list=>{
@@ -513,13 +564,14 @@ function tick(){
       const b=document.getElementById('badge');b.textContent=txt;
       b.style.background=cls==='on'?'var(--ok)':(cls==='wait'?'var(--acc)':'var(--off)');
       eq.textContent=s.equity??'—';pos.textContent=s.position??'—';pid.textContent=s.pid??'—';
-      bStart.disabled=!!s.desired;bStop.disabled=!s.desired;}
+      bStart.disabled=!!s.desired;bStop.disabled=!s.desired;bPing.disabled=!s.running;}
   }).catch(()=>{});
   if(sel){fetch('/log?id='+sel+'&after='+logLast).then(r=>r.json()).then(s=>{
     if(s.lines&&s.lines.length){const log=document.getElementById('log');
       const atBottom=log.scrollTop+log.clientHeight>=log.scrollHeight-30;
       for(const l of s.lines){log.textContent+=l.text+'\n';logLast=l.seq;}
       if(atBottom)log.scrollTop=log.scrollHeight;}
+    updateHealth(s.health, s.warning);
   }).catch(()=>{});}
   setTimeout(tick,1500);
 }

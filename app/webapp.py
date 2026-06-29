@@ -47,6 +47,7 @@ RUN_LIVE = os.path.join(REPO_ROOT, "run_live.py")
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 LOG_DIR = os.path.join(REPO_ROOT, "logs")       # per-account live logs (<id>.log)
 os.makedirs(LOG_DIR, exist_ok=True)
+SHUTDOWN_FLAG = os.path.join(LOG_DIR, "shutdown.flag")   # tells run_app.bat to stop
 
 HOST, PORT = "127.0.0.1", 8765
 RESTART_BACKOFF_S = 10          # wait before relaunching a crashed bot (like the .bat)
@@ -398,6 +399,29 @@ def ping():
     return jsonify({"ok": True})
 
 
+@app.route("/shutdown", methods=["POST"])
+def shutdown():
+    """Stop every bot and shut the panel down. Writes a flag so run_app.bat does
+    NOT relaunch it — restart by opening run_app.vbs (or run_app.bat) again."""
+    for r in list(MANAGER.runners.values()):
+        r.dispose()
+        if r.proc is not None and r.proc.poll() is None:
+            try:
+                r.proc.terminate()
+            except Exception:
+                pass
+    try:
+        open(SHUTDOWN_FLAG, "w").close()
+    except Exception:
+        pass
+
+    def _bye():
+        time.sleep(1.0)       # let the HTTP response return first
+        os._exit(0)
+    threading.Thread(target=_bye, daemon=True).start()
+    return jsonify({"ok": True})
+
+
 @app.route("/status")
 def status():
     return jsonify(MANAGER.summary())
@@ -456,7 +480,8 @@ PAGE = r"""
  .logcard{display:flex;flex-direction:column;min-height:0}.ttl{font-size:12px;color:var(--mut);margin:0 0 8px}
  .hidden{display:none}
 </style></head><body>
-<header><h1>IFVG bots</h1><span class="sub" id="hcount">—</span></header>
+<header><h1>IFVG bots</h1><span class="sub" id="hcount">—</span>
+ <button class="stop" style="margin-left:auto" onclick="shutdownAll()">⏻ Apagar todo</button></header>
 <div class="wrap">
  <div class="card col">
    <button class="add" onclick="addAccount()">+ Añadir cuenta</button>
@@ -550,6 +575,11 @@ function stopBot(id){const fd=new FormData();fd.append('id',id||sel);fetch('/sto
 function pingBot(){if(!sel)return;const fd=new FormData();fd.append('id',sel);
   fetch('/ping',{method:'POST',body:fd}).then(r=>r.json()).then(j=>{
     if(!j.ok)updateHealth('ping: '+(j.msg||'no se pudo'), 'No se pudo hacer ping: '+(j.msg||'bot parado'));});}
+function shutdownAll(){
+  if(!confirm('¿Parar TODOS los bots y apagar el panel?\n(Las posiciones abiertas siguen protegidas por su SL/TP en el broker. Para volver, abre run_app.vbs.)'))return;
+  fetch('/shutdown',{method:'POST'}).catch(()=>{}).finally(()=>{
+    document.body.innerHTML='<div style="padding:48px;color:#8b93a1;font:15px system-ui,Segoe UI,Arial">Panel apagado y bots parados. Puedes cerrar esta pestaña.<br><br>Para volver a arrancar, abre <b>run_app.vbs</b>.</div>';
+  });}
 function updateHealth(health,warning){
   document.getElementById('health').textContent=health||'';
   const hw=document.getElementById('hwarn');
@@ -582,6 +612,10 @@ loadAccounts().then(tick);
 
 
 def main():
+    try:                                  # clear any stale shutdown flag from a prior run
+        os.remove(SHUTDOWN_FLAG)
+    except OSError:
+        pass
     cfg = load_config()
     for a in cfg["accounts"]:
         if a.get("autostart"):

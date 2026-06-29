@@ -17,6 +17,12 @@ REM launchers stay silent (no browser pop-up); open the URL above manually
 set IFVG_NO_BROWSER=1
 :loop
 python app\webapp.py
+REM the panel's "Apagar todo" writes this flag -> stop the loop, do not relaunch
+if exist "logs\shutdown.flag" (
+  del /q "logs\shutdown.flag"
+  goto :end
+)
 echo [%date% %time%] webapp exited (code %errorlevel%) - restarting in 10s
 timeout /t 10 /nobreak >nul
 goto loop
+:end

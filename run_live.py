@@ -138,7 +138,12 @@ def broker_utc_offset(symbol):
     now = datetime.now(timezone.utc).timestamp()
     if tick is not None and tick.time:
         offset = round((tick.time - now) / 3600.0)
-        if (now - tick.time) < 600 and -12 <= offset <= 14:   # fresh + plausible
+        # real tick age once the whole-hour server offset is removed. A genuinely
+        # fresh tick is ~0 regardless of the broker's timezone — so this works for
+        # brokers BEHIND as well as AHEAD of UTC (the raw now-tick.time would be
+        # ~+3h for a behind-UTC broker even on a live tick, the '180m ago' bug).
+        real_age = (now - tick.time) + offset * 3600
+        if abs(real_age) < 600 and -12 <= offset <= 14:       # fresh + plausible
             _offset_cache[symbol] = offset
             return offset
     return _offset_cache.get(symbol, 0)
@@ -381,13 +386,16 @@ def _health(symbol):
             warns.append(f"{symbol} is not tradeable (trading disabled for it)")
     tick = mt5.symbol_info_tick(symbol)
     now = datetime.now(timezone.utc).timestamp()
-    tick_age = (now - tick.time) if tick and tick.time else None
+    # real tick age: remove the broker's whole-hour offset, else a behind-UTC
+    # broker shows a fake "180m ago" on a live tick (see broker_utc_offset)
+    offset = broker_utc_offset(symbol)
+    tick_age = ((now - tick.time) + offset * 3600) if tick and tick.time else None
     spread = (tick.ask - tick.bid) if tick else None
     return {
         "connected": connected, "algo": algo, "tradeable": tradeable,
         "demo": acct is not None and acct.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO,
         "equity": getattr(acct, "equity", None), "spread": spread,
-        "tick_age": tick_age,
+        "tick_age": tick_age, "offset": offset,
     }, warns
 
 
@@ -398,7 +406,8 @@ def log_health(symbol, tag="ping"):
     age = f"{h['tick_age'] / 60:.0f}m ago" if h["tick_age"] is not None else "?"
     line = (f"HEALTH [{tag}] ok={not warns} | conn={h['connected']} "
             f"algo={'ON' if h['algo'] else 'OFF'} {'DEMO' if h['demo'] else 'REAL'} "
-            f"tradeable={h['tradeable']} eq={h['equity']} spread={sp} last_tick={age}")
+            f"tradeable={h['tradeable']} eq={h['equity']} spread={sp} "
+            f"last_tick={age} (server UTC{h['offset']:+d})")
     if warns:
         line += " | WARN: " + "; ".join(warns)
     _log(line)

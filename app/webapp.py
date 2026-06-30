@@ -520,11 +520,11 @@ PAGE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
   --line:#23252c; --line2:#2d2f38; --text:#e7e9ee; --muted:#8b919c; --faint:#5b616c;
   --accent:#5b93f0; --live:#46c08a; --danger:#e5564e; --warn:#e3a857;
   --mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
-  font-size:16px;            /* rem base — bumped on big screens so the UI scales */
+  font-size:14.5px;          /* rem base — bumped on big screens so the UI scales */
  }
- @media(min-width:1800px){:root{font-size:17.5px}}
- @media(min-width:2400px){:root{font-size:19.5px}}
- @media(min-width:3000px){:root{font-size:22px}}
+ @media(min-width:1800px){:root{font-size:15.5px}}
+ @media(min-width:2400px){:root{font-size:16.5px}}
+ @media(min-width:3000px){:root{font-size:18px}}
  *{box-sizing:border-box;margin:0;padding:0}
  body{font-size:.875rem;line-height:1.5;font-family:-apple-system,"Segoe UI",Inter,system-ui,Roboto,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
  button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
@@ -545,7 +545,14 @@ PAGE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
  .sitem.sel{background:var(--panel2);color:var(--text)}
  .sitem.sel::before{content:"";position:absolute;left:-.625rem;top:.5rem;bottom:.5rem;width:3px;border-radius:2px;background:var(--accent)}
  .sitem .nm{flex:1;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .sitem .cnt{font-size:.69rem;color:var(--faint);font-variant-numeric:tabular-nums}
+ .sitem .cnt{font-size:.69rem;color:var(--faint);font-variant-numeric:tabular-nums;margin-left:auto}
+ .sitem .acts{display:none;align-items:center;gap:.12rem;margin-left:auto}
+ .sitem:hover .acts,.sitem.sel .acts{display:flex}
+ .sitem:hover .cnt,.sitem.sel .cnt{display:none}
+ .sbtn{width:1.45rem;height:1.45rem;border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--faint)}
+ .sbtn:hover{color:var(--text);background:var(--line)}
+ .sbtn.del:hover{color:var(--danger)}
+ .sbtn svg{width:.85rem;height:.85rem}
  .dot{width:.44rem;height:.44rem;border-radius:50%;background:var(--faint);flex:0 0 auto}
  .dot.live{background:var(--live);box-shadow:0 0 0 3px rgba(70,192,138,.16)}
  .dot.warn{background:var(--warn)} .dot.wait{background:var(--accent)}
@@ -617,8 +624,9 @@ PAGE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
  .btn.ghost:hover{border-color:var(--faint)}
  .btn.gho-danger{background:transparent;border-color:rgba(229,86,78,.4);color:#ef8b85}
  .btn.gho-danger:hover{background:rgba(229,86,78,.1)}
- .logwrap{flex:1;min-height:10rem}
- .log{height:100%;min-height:8.75rem;overflow:auto;background:#090a0d;border:1px solid var(--line);border-radius:.625rem;padding:.75rem .875rem;font-family:var(--mono);font-size:.75rem;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:#c5cad3}
+ .logwrap{flex:1;min-height:0;display:flex;flex-direction:column}
+ .logwrap .logpad{flex:1;min-height:0;padding:.625rem}
+ .log{height:100%;overflow:auto;background:#090a0d;border:1px solid var(--line);border-radius:.625rem;padding:.75rem .875rem;font-family:var(--mono);font-size:.75rem;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:#c5cad3}
  .hl{color:var(--faint);font-family:var(--mono);font-size:.69rem}
  .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;color:var(--faint);text-align:center;padding:1.875rem}
  .hidden{display:none!important}
@@ -650,8 +658,6 @@ PAGE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
    <div class="top">
      <div><div class="title" id="stratName">—</div><div class="sub" id="stratSub"></div></div>
      <div class="sp"></div>
-     <button class="iconbtn" title="Renombrar estrategia" onclick="openStrategyModal(true)">✎</button>
-     <button class="iconbtn no" title="Eliminar estrategia" onclick="confirmDeleteStrategy()">🗑</button>
    </div>
    <div class="panes">
      <div class="acol">
@@ -691,19 +697,19 @@ PAGE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
                <label class="switch"><input type="checkbox" name="autostart" id="fauto"><span class="track"></span><span>Arrancar al abrir la app</span></label>
              </div>
              <div class="actions">
-               <button type="button" class="btn primary" onclick="saveAccount()">Guardar</button>
                <button type="button" class="btn go" id="bStart" onclick="startBot()">Arrancar</button>
                <button type="button" class="btn no" id="bStop" onclick="stopBot()">Parar</button>
                <button type="button" class="btn ghost" id="bPing" onclick="pingBot()">Ping</button>
+               <button type="button" class="btn primary" onclick="saveAccount()">Guardar</button>
                <button type="button" class="btn gho-danger" style="margin-left:auto" onclick="confirmDeleteAccount()">Eliminar cuenta</button>
              </div>
            </form>
          </div>
        </div>
 
-       <div class="card logwrap" style="display:flex;flex-direction:column">
+       <div class="card logwrap">
          <div class="ct"><b>Salida en vivo</b></div>
-         <div style="flex:1;padding:10px"><div class="log scroll" id="log"></div></div>
+         <div class="logpad"><div class="log scroll" id="log"></div></div>
        </div>
      </div>
 
@@ -715,6 +721,8 @@ PAGE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
 
 <script>
 let STRATS=[], ACCS=[], STAT={}, selS=null, selA=null, logLast=0;
+const IC_EDIT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const IC_TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':(''+s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function statusOf(id){const s=STAT[id]||{};return s.running?['EN MARCHA','live']:(s.desired?['reiniciando','wait']:['parado','']);}
@@ -745,7 +753,11 @@ function renderStrats(){
     const d=document.createElement('div');d.className='sitem'+(s.id===selS?' sel':'');
     d.onclick=()=>selectStrategy(s.id);
     d.innerHTML=`<span class="dot ${cls}"></span><span class="nm">${esc(s.name)}</span>
-      <span class="cnt">${live?live+'/':''}${s.n_accounts}</span>`;
+      <span class="cnt">${live?live+'/':''}${s.n_accounts}</span>
+      <span class="acts">
+        <button class="sbtn" title="Renombrar" onclick="event.stopPropagation();openStrategyModal(true,'${s.id}')">${IC_EDIT}</button>
+        <button class="sbtn del" title="Eliminar" onclick="event.stopPropagation();confirmDeleteStrategy('${s.id}')">${IC_TRASH}</button>
+      </span>`;
     L.appendChild(d);
   }
   $('gstat').textContent=`${STRATS.length} estrategia(s) · ${totLive} bot(s) en marcha`;
@@ -834,8 +846,8 @@ function setHealth(h,w){$('dHealth').textContent=h||'';const b=$('dWarn');
   if(w){b.textContent='⚠ '+w;b.classList.remove('hidden');}else b.classList.add('hidden');}
 
 /* ---- strategy modals ---- */
-function openStrategyModal(edit){
-  const s=edit?curStrat():null;if(edit&&!s)return;
+function openStrategyModal(edit,id){
+  const s=edit?(id?STRATS.find(x=>x.id===id):curStrat()):null;if(edit&&!s)return;
   showModal(`<div class="mh">${edit?'Renombrar estrategia':'Nueva estrategia'}</div>
     <div class="mb">Nombre<input type="text" id="msName" value="${esc(s?s.name:'')}" placeholder="p. ej. IFVG">
       <div style="margin-top:12px">Script runner<input type="text" id="msRunner" value="${esc(s?s.runner:'run_live.py')}"></div>
@@ -848,10 +860,10 @@ function openStrategyModal(edit){
     post('/strategy',d).then(j=>{closeModal();if(!edit)selS=j.id;loadStrategies().then(loadAccounts);});
   };
 }
-function confirmDeleteStrategy(){
-  const s=curStrat();if(!s)return;
+function confirmDeleteStrategy(id){
+  const s=id?STRATS.find(x=>x.id===id):curStrat();if(!s)return;
   confirmModal({title:'Eliminar estrategia',body:`Se eliminará <b>${esc(s.name)}</b> y todas sus cuentas, deteniendo sus bots.`,
-    confirm:'Eliminar',onOk:()=>post('/strategy/delete',{id:s.id}).then(()=>{selS=null;selA=null;loadStrategies().then(loadAccounts);})});
+    confirm:'Eliminar',onOk:()=>post('/strategy/delete',{id:s.id}).then(()=>{if(s.id===selS){selS=null;selA=null;}loadStrategies().then(loadAccounts);})});
 }
 function confirmShutdown(){
   confirmModal({title:'Apagar todo',

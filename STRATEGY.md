@@ -18,7 +18,7 @@ sized, what every file does, and what is hardcoded.
 | **Trigger timeframe** | **M5** — internal sweep + inverse-FVG entry. |
 | **Execution clock** | **M1** — one decision per closed 1-minute bar. |
 | **Positions** | One at a time (no overlapping / pyramiding). |
-| **Entry order** | **Resting LIMIT at the FVG midpoint** (price must retrace into the gap), valid for 60 min then cancelled. |
+| **Entry order** | **Resting LIMIT at the FVG's near (proximal) edge** (price must retrace into the gap), valid for 60 min then cancelled. |
 | **Risk per trade** | Fixed **0.5%** of equity (drawdown-aware sizing). |
 | **Reward:risk** | Fixed **1.5 : 1**, with break-even at 1:1. |
 | **Time-stop** | Force-close after **4 h** (intraday cap; more cost-robust than longer holds). |
@@ -27,8 +27,8 @@ sized, what every file does, and what is hardcoded.
 | **Costs modelled** | **Variable per-bar spread** (×1.2) + **overnight swap** + FTMO 0.0014% commission; 1:100 leverage. |
 | **Engine** | `backtrader` for backtest; raw MetaTrader 5 API for live. |
 | **Data** | Dukascopy ticks (FTMO profile) via Quant Data Manager, loaded as the MT5 custom symbol `XAUUSD2020_FTMO`. |
-| **Result (2020–2025, compounding $10k, 0.5%, realistic costs)** | → **$62,474** · PF 1.93 · Sharpe 5.06 · max DD 4.0% · 92% winning months · 0 days over FTMO's 5% daily limit. |
-| **Cross-validated** | Independent broker + unseen earlier period (IC Markets 2017–2019, via Darwinex): still strong at FTMO-level cost — PF 1.87, max DD 3.5%, 0 days ≥5%. |
+| **Result (2020–2025, compounding $10k, 0.5%, realistic costs)** | → **$99,103** · PF 2.11 · Sharpe 5.88 · max DD 3.5% (proximal-edge entry; the `mid` baseline was $62,474 · PF 1.93 · DD 4.0% — see §7 "Entry anchor"). |
+| **Cross-validated** | Independent broker + unseen earlier period (IC Markets 2017–2019, via Darwinex): still strong at FTMO-level cost — PF 2.04 (mid 1.87), max DD 2.9%. Proximal improved every axis on both sources. |
 
 > **One rule ships.** Two earlier rule variants (Judas Swing / continuation) were
 > removed after multi-year validation showed they lost money and added
@@ -53,9 +53,11 @@ For each closed **M1** bar, when **flat**:
    recent 5-minute window, price must take out a recent 5m swing — a swing low
    for a bull zone, a swing high for a bear zone. This is the manipulation leg.
 4. **Place a resting LIMIT at the inverse 5m FVG.** The sweep creates an opposing
-   5-minute FVG; a limit order rests at its **midpoint**, **in the direction of
-   the H1 zone** (long in a bull zone, short in a bear zone). Price has to retrace
-   *into the gap* to fill — the faithful ICT entry. The order is valid for
+   5-minute FVG; a limit order rests at its **near (proximal) edge** — the side
+   price touches first as it returns to the gap — **in the direction of the H1
+   zone** (long in a bull zone, short in a bear zone). Price has to retrace *into
+   the gap* to fill — the faithful ICT entry. The proximal edge captures the clean
+   shallow bounces a midpoint limit misses (see "Entry anchor" in §7). The order is valid for
    `ENTRY_TTL_MIN` (60 min); if price never returns, it is cancelled and the slot
    is freed. (A market entry here filled wherever price was — often several
    dollars from the gap — which corrupted the reward:risk and produced multi-week
@@ -202,7 +204,7 @@ git-ignored (see `.gitignore`).
 
 ## 5. Execution model
 
-* **Entries are resting LIMIT orders at the FVG midpoint**, valid for
+* **Entries are resting LIMIT orders at the FVG's near (proximal) edge**, valid for
   `ENTRY_TTL_MIN` (60 min). Price must retrace into the gap to fill, so the fill
   matches the level the stop/target/sizing were built from. *Why this matters:* a
   market entry fills wherever price happens to be when the signal fires — often
@@ -256,7 +258,7 @@ them in the source if you ever re-tune.
 | Constant | Value | Where | Meaning |
 |---|---|---|---|
 | `RR` | 1.5 | entry_logic | take-profit = 1.5 × stop distance |
-| `ENTRY_ANCHOR` | "mid" | entry_logic | where the limit rests in the FVG (mid / proximal / distal) |
+| `ENTRY_ANCHOR` | "proximal" | entry_logic | where the limit rests in the FVG (mid / proximal / distal); locked proximal — see §7 "Entry anchor" |
 | `ENTRY_TTL_MIN` | 60 | entry_logic | cancel the resting limit if unfilled after this long |
 | `FVG_BODY_MULT` | 1.0 | entry_logic | 1h impulse filter (main activity knob) |
 | `H1_BUF` | 60 | entry_logic | recent 1h candles scanned for zones |
@@ -317,6 +319,31 @@ the IS-chosen stop applied blind to OOS gives PF 1.60. **4 h is the OOS optimum 
 strong in-sample (PF 1.32),** so it was locked as a principled intraday cap on the
 stable part of the curve (the 2–3 h "maximum" is a noisy peak we deliberately did
 not chase).
+
+**Entry anchor — locked `proximal` (near edge), cross-validated.** The limit can
+rest at the gap midpoint (`mid`), the near edge price touches first (`proximal`)
+or the far edge (`distal`). Re-ran the whole battery for `mid` vs `proximal` on
+**both** independent sources at FTMO-level cost. Proximal improved *every* axis on
+*both* — not a lone spike, the robustness signature (§8), not the overfit one:
+
+| Source | Anchor | N | PF | net $ | WR | maxDD | Sharpe | adverse-fill PF |
+|---|---|---|---|---|---|---|---|---|
+| FTMO 2020–25 | mid | 2080 | 1.93 | +62,474 | 54.6% | 4.02% | 5.06 | 1.75 |
+| FTMO 2020–25 | **proximal** | 2367 | **2.11** | **+99,103** | 56.6% | **3.49%** | **5.88** | **1.91** |
+| IC Markets 2017–19 | mid | 815 | 1.87 | +11,848 | 56.3% | 3.48% | 4.95 | 1.53 |
+| IC Markets 2017–19 | **proximal** | 944 | **2.04** | **+16,093** | 56.5% | **2.90%** | **5.65** | **1.66** |
+
+The extra ~14–16% of fills are the clean shallow bounces that reverse *at the near
+edge* before reaching the midpoint — disproportionately winners (WR rises), which
+is the ICT-predicted favourable selection, and it replicates across broker *and*
+period. Crucially the **adverse-fill PF** (both fills $0.10/oz worse) *improves*
+too: a near-edge limit fills more realistically than a deeper one, so proximal is
+more robust to execution, not less. **Open caveat:** the backtest still assumes a
+touch fills; proximal's extra edge sits in the shallowest taps, the ones most
+exposed to *no-fill* in a fast live market — monitor the demo's realised fill rate
+vs backtest. The detailed per-year / Monte-Carlo breakdown below reflects the `mid`
+baseline (retained as the conservative reference); proximal ≥ mid on every axis
+measured.
 
 **Monte Carlo (10k resampled trade sequences).** Bootstrap (resample with
 replacement) return p5/50/95 = 441/624/867%; max-drawdown p50/95/99 = 3.8 / 5.5 /

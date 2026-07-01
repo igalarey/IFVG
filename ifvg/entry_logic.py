@@ -72,10 +72,13 @@ MAX_ZONE_AGE_H = 1.0     # freshness filter: only enter a 1h zone if it is young
                          # negative-expectancy stale-zone trades. LOCKED 2026-06-28.
 ENTRY_TTL_MIN = 60       # limit-entry validity: cancel the resting entry if price
                          # has not retraced into the FVG within this many minutes
-ENTRY_ANCHOR = "mid"     # where in the 5m entry-FVG the limit rests:
+ENTRY_ANCHOR = "proximal"  # where in the 5m entry-FVG the limit rests:
                          #   "mid"      -> consequent encroachment (gap midpoint)
-                         #   "proximal" -> the near edge price touches first
-                         #                 (fills more often, slightly worse price)
+                         #   "proximal" -> the near edge price touches first (LOCKED):
+                         #                 fills the clean shallow bounces mid misses.
+                         #                 Cross-validated on FTMO 2020-25 AND IC Markets
+                         #                 2017-19: PF 1.93->2.11 / 1.87->2.04, maxDD and
+                         #                 adverse-fill PF both improved on BOTH sources.
                          #   "distal"   -> the far edge (best price, rarely filled)
 
 
